@@ -238,9 +238,21 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
+    /// A scratch path no other running test shares.
+    ///
+    /// Keyed on the process id and a per-process counter, not the thread id:
+    /// nextest runs each test in its own process, where every thread id is
+    /// the same, so thread-keyed paths collide and the tests race each other
+    /// through one repository.
+    fn unique_temp_path(prefix: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let nth = NEXT.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{prefix}-{}-{nth}", std::process::id()))
+    }
+
     fn setup_test_repo() -> (Repository, PathBuf) {
-        let thread_id = std::thread::current().id();
-        let temp_path = std::env::temp_dir().join(format!("git-filter-tree-test-{:?}", thread_id));
+        let temp_path = unique_temp_path("git-filter-tree-test");
         let _ = fs::remove_dir_all(&temp_path);
         fs::create_dir_all(&temp_path).unwrap();
         let repo = Repository::init_bare(&temp_path).unwrap();
@@ -535,8 +547,7 @@ mod tests {
     /// Initializes a non-bare repository so that `.gitattributes` written to
     /// its working directory are picked up by `repo.get_attr(…)`.
     fn setup_attr_test_repo() -> (Repository, PathBuf) {
-        let thread_id = std::thread::current().id();
-        let temp_path = std::env::temp_dir().join(format!("git-filter-attr-test-{:?}", thread_id));
+        let temp_path = unique_temp_path("git-filter-attr-test");
         let _ = fs::remove_dir_all(&temp_path);
         fs::create_dir_all(&temp_path).unwrap();
         let repo = Repository::init(&temp_path).unwrap();
